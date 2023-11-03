@@ -1,2 +1,0 @@
-nvcc -o template -lwb  template.cu
-chmod +x run_datasets
