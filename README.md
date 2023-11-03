@@ -1,6 +1,3 @@
-<<<<<<< HEAD
-# ECE408
-=======
 # ECE408 Fall 2023
 
 Welcome to ECE408 / CS483 / CSE408 Fall 2023!
@@ -50,4 +47,3 @@ rai -p ./MP0
 ****
 On Windows, you'll need to install WSL and a virtual linux OS. Several Linux versions are available
 through the Microsoft Store.
->>>>>>> release/main
