@@ -40,23 +40,23 @@ __global__ void conv_forward_kernel(float *output, const float *input, const flo
     #define mask_4d(i3, i2, i1, i0) mask[(i3) * (C * K * K) + (i2) * (K * K) + (i1) * (K) + i0]
 
     // Insert your GPU convolution kernel code here
-		int W_grid = ceil((float)(W)/TILE_WIDTH); 
+    int W_grid = ceil((float)(W)/TILE_WIDTH); 
     int H_grid = ceil((float)(H)/TILE_WIDTH); 
-		int b = blockIdx.x;
-		int m = blockIdx.y;
-		int h = (blockIdx.z / W_grid) * TILE_WIDTH + threadIdx.y;
- 		int w = (blockIdx.z % W_grid) * TILE_WIDTH + threadIdx.x;
-		float temp = 0.0f;
+    int b = blockIdx.x;
+    int m = blockIdx.y;
+    int h = (blockIdx.z / W_grid) * TILE_WIDTH + threadIdx.y;
+    int w = (blockIdx.z % W_grid) * TILE_WIDTH + threadIdx.x;
+    float temp = 0.0f;
     for(int c = 0; c < C; c++){
-			for(int p = 0; p < K; p++)
-				for(int q = 0; q < K; q++) {
-					if (!((h * S + p >= H) || (w * S + q >= W)))
-						temp += in_4d(b, c, h * S + p, w * S + q) * mask_4d(m, c, p, q);
-				}	
-		}
+        for(int p = 0; p < K; p++)
+            for(int q = 0; q < K; q++) {
+                if (!((h * S + p >= H) || (w * S + q >= W)))
+                    temp += in_4d(b, c, h * S + p, w * S + q) * mask_4d(m, c, p, q);
+            }	
+    }
 
-		if(h < H_out && w < W_out)
-			out_4d(b, m, h, w) = temp;
+    if(h < H_out && w < W_out)
+        out_4d(b, m, h, w) = temp;
 
 
     #undef out_4d
