@@ -154,7 +154,7 @@ int main(int argc, char **argv) {
   float2Uchar<<<dimGrid_C3, dimBlock>>>(device_inputImage, device_ucharImage, imageWidth, imageHeight);
   RGB2Greyscale<<<dimGrid_C1, dimBlock>>>(device_ucharImage, device_grayImage, imageWidth, imageHeight);
   histo_compute<<<dimGrid_C1, dimBlock>>>(device_grayImage, device_histogram, imageWidth, imageHeight);
-  cdf_compute<<<1, HISTOGRAM_LENGTH>>>(device_histogram, device_cdf, input_image_size);
+  cdf_compute<<<1, HISTOGRAM_LENGTH/2>>>(device_histogram, device_cdf, input_image_size);
   histo_equalization<<<dimGrid_C3, dimBlock>>>(device_ucharImage, device_cdf, imageWidth, imageHeight);
   uchar2Float<<<dimGrid_C3, dimBlock>>>(device_ucharImage, device_outputImage, imageWidth, imageHeight);
 
