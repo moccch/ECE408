@@ -1,6 +1,6 @@
 // Histogram Equalization
 
-#include </home/cmo8/ECE408/libwb/wb.h>
+#include <wb.h>
 
 #define HISTOGRAM_LENGTH 256
 #define BLOCK_SIZE 32
