@@ -3,3 +3,4 @@
 git pull
 git fetch release
 git merge release/main -m "Merging release repository"
+git push
