@@ -1,4 +1,5 @@
 #include <wb.h>
+#define BLOCK_WIDTH 256
 
 #define wbCheck(stmt)                                                     \
   do {                                                                    \
@@ -14,6 +15,17 @@ __global__ void spmvJDSKernel(float *out, int *matColStart, int *matCols,
                               int *matRowPerm, int *matRows,
                               float *matData, float *vec, int dim) {
   //@@ insert spmv kernel for jds format
+  int row = blockIdx.x * blockDim.x + threadIdx.x;
+  if (row < dim) {
+    float temp_value = 0;
+    unsigned int s = 0;
+    while (s < matRows[row]){
+      temp_value += matData[matColStart[s] + row] * vec[matCols[matColStart[s] + row]];
+      s++;
+    }
+    out[matRowPerm[row]] = temp_value;
+  }
+
 }
 
 static void spmvJDS(float *out, int *matColStart, int *matCols,
@@ -21,6 +33,10 @@ static void spmvJDS(float *out, int *matColStart, int *matCols,
                     float *vec, int dim) {
 
   //@@ invoke spmv kernel for jds format
+  dim3 dimGrid = ceil((float)dim/BLOCK_WIDTH);
+  spmvJDSKernel<<<dimGrid, BLOCK_WIDTH>>>(out, matColStart, matCols,
+                                          matRowPerm, matRows, matData,
+                                          vec, dim);
 }
 
 int main(int argc, char **argv) {
