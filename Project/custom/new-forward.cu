@@ -40,8 +40,8 @@ __global__ void conv_forward_kernel(float *output, const float *input, const flo
     #define mask_4d(i3, i2, i1, i0) mask[(i3) * (C * K * K) + (i2) * (K * K) + (i1) * (K) + i0]
 
     // Insert your GPU convolution kernel code here
-    int W_grid = ceil((float)(W)/TILE_WIDTH); 
-    int H_grid = ceil((float)(H)/TILE_WIDTH); 
+    int W_grid = ceil((float)(W_out)/TILE_WIDTH); 
+    int H_grid = ceil((float)(H_out)/TILE_WIDTH); 
     int b = blockIdx.x;
     int m = blockIdx.y;
     int h = (blockIdx.z / W_grid) * TILE_WIDTH + threadIdx.y;
@@ -95,8 +95,10 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, co
 __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *device_input, const float *device_mask, const int B, const int M, const int C, const int H, const int W, const int K, const int S)
 {
     // Set the kernel dimensions and call the kernel
-    int W_grid = ceil((float)(W)/TILE_WIDTH); 
-    int H_grid = ceil((float)(H)/TILE_WIDTH); 
+    const int H_out = (H - K)/S + 1;
+    const int W_out = (W - K)/S + 1;
+    int W_grid = ceil((float)(W_out)/TILE_WIDTH); 
+    int H_grid = ceil((float)(H_out)/TILE_WIDTH); 
     int Y = H_grid * W_grid;
     dim3 blockDim(TILE_WIDTH, TILE_WIDTH, 1); // output tile for untiled code
     dim3 gridDim(B, M, Y);
