@@ -151,10 +151,8 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
     int Y = H_grid * W_grid;
     dim3 blockDim(TILE_WIDTH, TILE_WIDTH, 1); // output tile for untiled code
     dim3 gridDim(B, M, Y);
-
-    int size_Input = H * W * B * C;
-    int size_Kernel = K * K * M * C;
-    int size_Output = H_out * W_out * B * M;
+    const int shared_width = K + S * (TILE_WIDTH - 1);
+    int sharedDim = C * shared_width * shared_width * sizeof(float);
 
     half* half_device_input;
     half* half_device_output;
@@ -173,10 +171,10 @@ __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *
     cudaDeviceSynchronize();
 
 
-    conv_forward_kernel <<< gridDim, blockDim >>> (half_device_output, half_device_input, half_device_mask, B, M, C, H, W, K, S);
+    conv_forward_kernel <<< gridDim, blockDim, sharedDim>>> (half_device_output, half_device_input, half_device_mask, B, M, C, H, W, K, S);
     cudaDeviceSynchronize();
 
-    half2float <<< gridHalf, blockHalf >>> (device_output, half_device_output, size_Output);
+    half2float <<< gridHalf, blockHalf>>> (device_output, half_device_output, H_out * W_out * B * M);
     cudaDeviceSynchronize();
 
     cudaFree(half_device_input);
