@@ -1,13 +1,11 @@
 #include <cmath>
 #include <iostream>
 #include "gpu-new-forward.h"
-#include "cuda_fp16.h"
+using namespace std;
 
-#define TILE_WIDTH 16
+#define TILE_WIDTH 8
 
-__constant__ float MASK[4096];
-
-__global__ void conv_forward_kernel(half *output, const half *input, const half *mask, const int B, const int M, const int C, const int H, const int W, const int K, const int S)
+__global__ void conv_forward_kernel(float *output, const float *input, const float *mask, const int B, const int M, const int C, const int H, const int W, const int K,const int S)
 {
     /*
     Modify this function to implement the forward pass described in Chapter 16.
@@ -29,8 +27,6 @@ __global__ void conv_forward_kernel(half *output, const half *input, const half 
 
     const int H_out = (H - K)/S + 1;
     const int W_out = (W - K)/S + 1;
-    extern __shared__ half SM[];
-    int shared_width = S * (TILE_WIDTH - 1) + K;
     // (void)H_out; // silence declared but never referenced warning. remove this line when you start working
     // (void)W_out; // silence declared but never referenced warning. remove this line when you start working
 
@@ -41,77 +37,33 @@ __global__ void conv_forward_kernel(half *output, const half *input, const half 
 
     #define out_4d(i3, i2, i1, i0) output[(i3) * (M * H_out * W_out) + (i2) * (H_out * W_out) + (i1) * (W_out) + i0]
     #define in_4d(i3, i2, i1, i0) input[(i3) * (C * H * W) + (i2) * (H * W) + (i1) * (W) + i0]
-    #define mask_4d(i3, i2, i1, i0) MASK[(i3) * (C * K * K) + (i2) * (K * K) + (i1) * (K) + i0]
-    #define sm_3d(i2, i1, i0) SM[(i2) * (shared_width * shared_width) + (i1) * shared_width + i0]
+    #define mask_4d(i3, i2, i1, i0) mask[(i3) * (C * K * K) + (i2) * (K * K) + (i1) * (K) + i0]
 
     // Insert your GPU convolution kernel code here
-    int tx = threadIdx.x;
-    int ty = threadIdx.y;
-    int W_grid = ceil((float)(W_out)/TILE_WIDTH); 
-    int H_grid = ceil((float)(H_out)/TILE_WIDTH); 
+    int W_grid = ceil((float)(W)/TILE_WIDTH); 
+    int H_grid = ceil((float)(H)/TILE_WIDTH); 
     int b = blockIdx.x;
     int m = blockIdx.y;
-    int h = (blockIdx.z / W_grid) * TILE_WIDTH + ty;
-    int w = (blockIdx.z % W_grid) * TILE_WIDTH + tx;
-    half temp = 0.0;
-    int left_h = h - ty;
-    int left_w = w - tx;
-
-    for (int c = 0; c < C; c++){
-        for(int i = ty; i < shared_width; i += TILE_WIDTH){
-            for(int j = tx; j < shared_width; j += TILE_WIDTH){
-                if (left_h * S + i < H && left_w * S + j < W)
-                    sm_3d(c, i, j) = in_4d(b, c, S * left_h + i, S * left_w + j);
-                else
-                    sm_3d(c, i, j) = 0.0;    
-            }
-        }
+    int h = (blockIdx.z / W_grid) * TILE_WIDTH + threadIdx.y;
+    int w = (blockIdx.z % W_grid) * TILE_WIDTH + threadIdx.x;
+    float temp = 0.0f;
+    for(int c = 0; c < C; c++){
+        for(int p = 0; p < K; p++)
+            for(int q = 0; q < K; q++) {
+                if (!((h * S + p >= H) || (w * S + q >= W)))
+                    temp += in_4d(b, c, h * S + p, w * S + q) * mask_4d(m, c, p, q);
+            }	
     }
-    __syncthreads();
 
-    if(h < H_out && w < W_out) {
-        for(int c = 0; c < C; c++){
-            for(int p = 0; p < K; p++){
-                for(int q = 0; q < K; q++) {
-                    // temp += sm_3d(c, ty * S + p, tx * S + q) * mask_4d(m, c, p, q);  
-                    temp = __hadd(temp, __hmul(sm_3d(c, ty * S + p, tx * S + q), __float2half(mask_4d(m, c, p, q))));              
-                }	
-            }
-        }
+    if(h < H_out && w < W_out)
         out_4d(b, m, h, w) = temp;
-    }
 
-
-    // if ((h < H_out) && (w < W_out)){
-    //   half temp = 0.0;
-    //   for (int c = 0; c < C; c++){
-    //     for (int p = 0; p < K; p++){
-    //       for (int q = 0; q < K; q++){
-    //         temp = __hadd(temp, __hmul(in_4d(b, c, S * h + p, S * w + q), __float2half(mask_4d(m, c, p, q))));
-    //       }
-    //     }
-    //   }
-    //   out_4d(b, m, h, w) = temp;
-    // }  
 
     #undef out_4d
     #undef in_4d
     #undef mask_4d
 }
 
-__global__ void float2half(const float* in_float, half* out_half, int size){
-  int idx = blockIdx.x * blockDim.x + threadIdx.x;
-  for (int i = idx; i < size; i += TILE_WIDTH * 1024){
-    out_half[i] = __float2half(in_float[i]);
-  }
-}
-
-__global__ void half2float(float* out_float, half* in_half, int size){
-  int idx = blockIdx.x * blockDim.x + threadIdx.x;
-  for (int i = idx; i < size; i += TILE_WIDTH * 1024){
-    out_float[i] = __half2float(in_half[i]);
-  }
-}
 	
 __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, const float *host_input, const float *host_mask, float **device_output_ptr, float **device_input_ptr, float **device_mask_ptr, const int B, const int M, const int C, const int H, const int W, const int K, const int S)
 {
@@ -135,8 +87,7 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, co
     cudaMalloc((void**)device_mask_ptr, M * C * K * K * sizeof(float));
 
     cudaMemcpy(*device_input_ptr, host_input, B * C * H * W * sizeof(float), cudaMemcpyHostToDevice);
-    // cudaMemcpy(*device_mask_ptr, host_mask, M * C * K * K * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpyToSymbol(MASK, host_mask, M * C * K * K * sizeof(float));
+    cudaMemcpy(*device_mask_ptr, host_mask, M * C * K * K * sizeof(float), cudaMemcpyHostToDevice);
    
 }
 
@@ -144,44 +95,12 @@ __host__ void GPUInterface::conv_forward_gpu_prolog(const float *host_output, co
 __host__ void GPUInterface::conv_forward_gpu(float *device_output, const float *device_input, const float *device_mask, const int B, const int M, const int C, const int H, const int W, const int K, const int S)
 {
     // Set the kernel dimensions and call the kernel
-    const int H_out = (H - K)/S + 1;
-    const int W_out = (W - K)/S + 1;
-    int W_grid = ceil((float)(W_out)/TILE_WIDTH); 
-    int H_grid = ceil((float)(H_out)/TILE_WIDTH); 
+    int W_grid = ceil((float)(W)/TILE_WIDTH); 
+    int H_grid = ceil((float)(H)/TILE_WIDTH); 
     int Y = H_grid * W_grid;
     dim3 blockDim(TILE_WIDTH, TILE_WIDTH, 1); // output tile for untiled code
     dim3 gridDim(B, M, Y);
-
-    int size_Input = H * W * B * C;
-    int size_Kernel = K * K * M * C;
-    int size_Output = H_out * W_out * B * M;
-
-    half* half_device_input;
-    half* half_device_output;
-    half* half_device_mask;
-
-    cudaMalloc(&half_device_input, H * W * B * C * sizeof(half));
-    cudaMalloc(&half_device_mask, K * K * M * C * sizeof(half));
-    cudaMalloc(&half_device_output, H_out * W_out * B * M * sizeof(half));
-
-    dim3 gridHalf(TILE_WIDTH, 1, 1);
-    dim3 blockHalf(1024, 1, 1);
-
-    float2half <<< gridHalf, blockHalf >>> (device_input, half_device_input, H * W * B * C);
-    cudaDeviceSynchronize();
-    float2half <<< gridHalf, blockHalf >>> (device_mask, half_device_mask, K * K * M * C);
-    cudaDeviceSynchronize();
-
-
-    conv_forward_kernel <<< gridDim, blockDim >>> (half_device_output, half_device_input, half_device_mask, B, M, C, H, W, K, S);
-    cudaDeviceSynchronize();
-
-    half2float <<< gridHalf, blockHalf >>> (device_output, half_device_output, size_Output);
-    cudaDeviceSynchronize();
-
-    cudaFree(half_device_input);
-    cudaFree(half_device_mask);
-    cudaFree(half_device_output);
+    conv_forward_kernel<<<gridDim, blockDim>>>(device_output, device_input, device_mask, B, M, C, H, W, K, S);
 
 }
 
